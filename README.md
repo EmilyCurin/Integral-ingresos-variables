@@ -123,3 +123,11 @@ Reconocimiento especializado para formatos de bancos, revisión de duplicados co
 ---
 
 **Stack:** Python + FastAPI + SQLite + Fernet + HTML/CSS/JavaScript, PyMuPDF, OpenPyXL, Tesseract (OCR externo) y Ollama opcional. Software local; no se realizan compras ni suscripciones.
+
+### Importación flexible (actualización)
+
+El importador intenta identificar las columnas por su contenido, incluso cuando la hoja incluye títulos o filas preliminares, y admite formatos con columnas separadas de **crédito y débito**. En PDF bancarios digitales reconoce ciertas tablas usando la posición de sus columnas (no se limita a buscar una fecha y un monto por línea). Las descripciones de clases, tutorías e inscripciones se sugieren como posibles ingresos; los depósitos sin origen verificable y las transferencias de cuentas no identificadas permanecen **pendientes**. Puedes corregir la categoría de cada propuesta antes de guardarla.
+
+**Importante:** no se garantiza la lectura universal de cualquier estado de cuenta, escritura manual o diseño de Excel. Los PDF escaneados y las imágenes requieren OCR; la extracción puede equivocarse y siempre debe revisarse. Un crédito bancario no equivale automáticamente a un ingreso real. No se utilizan documentos personales reales como fixtures en este repositorio.
+
+Para probar el lector flexible ejecuta `python -m pytest -q`. Se incluye un estado de cuenta **sintético** de ejemplo en `tests/fixtures/`.
