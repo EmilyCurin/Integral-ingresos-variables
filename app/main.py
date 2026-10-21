@@ -36,7 +36,21 @@ async def guard(request,call_next):
     response.headers['Cache-Control']='no-store'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['X-Frame-Options']='DENY'
-    response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; frame-src https://integral-18a66.firebaseapp.com https://accounts.google.com;"
+    # Firebase Authentication usa módulos JS, conexiones a Google y una ventana OAuth.
+    # Restringimos la política a proveedores concretos, sin comodines globales.
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "script-src 'self' https://www.gstatic.com https://apis.google.com; "
+        "style-src 'self' 'unsafe-inline' https://accounts.google.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://www.gstatic.com https://identitytoolkit.googleapis.com "
+        "https://securetoken.googleapis.com https://www.googleapis.com "
+        "https://accounts.google.com https://firebaseapp.com https://firebase.googleapis.com; "
+        "frame-src 'self' https://integral-18a66.firebaseapp.com https://accounts.google.com "
+        "https://www.google.com https://apis.google.com; "
+        "form-action 'self' https://accounts.google.com;"
+    )
     return response
 
 @app.get('/')
