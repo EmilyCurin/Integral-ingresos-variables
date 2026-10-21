@@ -1,6 +1,8 @@
 import os, json, base64, secrets, hashlib, hmac, mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent/'.env')
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -10,43 +12,26 @@ from cryptography.fernet import Fernet
 from . import storage as st
 from .core import summary, date_normalize, parse_amount, CATEGORIES
 from .importer import parse,MAX_BYTES
-from .ai import ollama_status, interpret_notes
+from .ai import ai_status, interpret_notes
+from .classifier import classify_batch
 
 ROOT=Path(__file__).resolve().parent.parent
-SECRET_PATH=st.BASE/'session.secret'
-if not SECRET_PATH.exists():
-    SECRET_PATH.write_text(secrets.token_hex(32))
-    try: os.chmod(SECRET_PATH,0o600)
-    except OSError: pass
-serializer=URLSafeTimedSerializer(SECRET_PATH.read_text())
 app=FastAPI(title='Integral | Ingresos variables',docs_url=None,redoc_url=None)
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
-# Contraseña derivada nunca se guarda en cookie; sesión cifrada autenticada que contiene la clave.
-SESSION_HOURS=8
-ACTIVE_SESSIONS={}  # Claves solo en memoria del servidor, nunca en cookies.
-
+# Uso LOCAL sin contraseña. Nunca se expone una bóveda compartida en una URL pública.
+# Si se quiere publicar, implementar primero autenticación Google/Firebase y aislamiento por usuario.
 def session_key(request):
-    token=request.cookies.get('iv_session')
-    if not token: raise HTTPException(401,'Inicie sesión')
-    try:
-        payload=serializer.loads(token,max_age=SESSION_HOURS*3600)
-        key=ACTIVE_SESSIONS.get(payload['sid'])
-        if not key: raise ValueError('Sesión no activa')
-        return Fernet(base64.urlsafe_b64encode(key))
-    except (BadSignature,SignatureExpired,ValueError,KeyError): raise HTTPException(401,'Sesión vencida')
-
-def login_response(key):
-    sid=secrets.token_urlsafe(32)
-    ACTIVE_SESSIONS[sid]=key
-    res=JSONResponse({'ok':True})
-    res.set_cookie('iv_session',serializer.dumps({'sid':sid}),max_age=SESSION_HOURS*3600,
-                   httponly=True,samesite='strict',secure=False,path='/')
-    return res
+    host=request.client.host if request.client else ''
+    requested_host=request.headers.get('host','').split(':')[0].strip('[]').lower()
+    if host not in ('127.0.0.1','::1','localhost','testclient') or requested_host not in ('127.0.0.1','::1','localhost','testserver'):
+        raise HTTPException(403,'Datos privados: Integral requiere acceso local. Para acceso público implemente Firebase Auth y aislamiento por usuario.')
+    return st.local_fernet()
 
 def ensure_csrf(request):
     origin=request.headers.get('origin')
     host=request.headers.get('host')
-    if origin and host and origin not in ('http://'+host,'https://'+host): raise HTTPException(403,'Origen inválido')
+    if origin and host and origin not in ('http://'+host,'https://'+host):
+        raise HTTPException(403,'Origen inválido')
 
 @app.middleware('http')
 async def guard(request,call_next):
@@ -62,39 +47,14 @@ async def guard(request,call_next):
 def index(): return FileResponse(ROOT/'static'/'index.html')
 @app.get('/api/state')
 def state(request:Request):
-    auth=False
-    try: session_key(request); auth=True
-    except HTTPException: pass
-    return {'configured':st.configured(),'authenticated':auth}
-class Password(BaseModel): password:str
-@app.post('/api/setup')
-def setup(p:Password):
-    try:
-        st.setup(p.password)
-        return make_login(p.password)
-    except ValueError as e: raise HTTPException(400,str(e))
-def make_login(password):
-    # Obtiene material derivado para sesión solo luego de verificar credenciales.
-    with st.db() as con: salt=bytes.fromhex(con.execute("SELECT value FROM settings WHERE key='salt'").fetchone()[0])
-    st.unlock(password)
-    return login_response(st.derive(password,salt))
-@app.post('/api/login')
-def login(p:Password):
-    try: return make_login(p.password)
-    except ValueError as e: raise HTTPException(401,str(e))
-@app.post('/api/logout')
-def logout(request:Request):
-    token=request.cookies.get('iv_session')
-    try:
-        if token: ACTIVE_SESSIONS.pop(serializer.loads(token,max_age=SESSION_HOURS*3600)['sid'],None)
-    except (BadSignature,SignatureExpired,KeyError): pass
-    r=JSONResponse({'ok':True});r.delete_cookie('iv_session');return r
+    session_key(request)
+    return {'configured':True,'authenticated':True,'mode':'local'}
 
 @app.get('/api/data')
 def data(request:Request):
     f=session_key(request)
     return {'movements':st.movements(f),'notes':st.notes(f),'documents':st.documents(),
-            'categories':CATEGORIES,'ollama':ollama_status()}
+            'categories':CATEGORIES,'ai':ai_status()}
 
 @app.post('/api/upload')
 async def upload(request:Request,file:UploadFile=File(...)):
@@ -105,6 +65,22 @@ async def upload(request:Request,file:UploadFile=File(...)):
     if len(rows)>1500: rows=rows[:1500]
     return {'rows':rows,'text_preview':preview,'filename':file.filename,'total_proposals':len(rows),
             'warning':'Revise montos y fechas, especialmente en PDF o imágenes. Nada se agrega hasta que confirme.'}
+
+class ClassificationRequest(BaseModel):
+    rows:list[dict]
+    note:str=''
+    use_ai:bool=True
+@app.post('/api/classify-proposals')
+def classify_proposals(request:Request,p:ClassificationRequest):
+    session_key(request)
+    if len(p.note)>5000: raise HTTPException(422,'Nota demasiado larga')
+    if len(p.rows)>1500: raise HTTPException(422,'Demasiados movimientos')
+    for r in p.rows:
+        if r.get('category') not in CATEGORIES: raise HTTPException(422,'Categoría inválida')
+        try:
+            if int(r.get('amount_cents',0))<=0: raise ValueError()
+        except (TypeError,ValueError): raise HTTPException(422,'Monto inválido')
+    return classify_batch(p.rows,p.note,p.use_ai)
 
 class ImportBatch(BaseModel):
     filename:str='registro_manual'

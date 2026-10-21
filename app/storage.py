@@ -20,6 +20,14 @@ def db():
     con.executescript(SCHEMA)
     return con
 
+def local_fernet():
+    """Key file local; use only with loopback binding. Not compatible with old password vaults."""
+    key_file=BASE/'local.key'
+    if not key_file.exists():
+        fd=os.open(key_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,'wb') as f: f.write(Fernet.generate_key())
+    return Fernet(key_file.read_bytes())
+
 def configured():
     with db() as con: return bool(con.execute("SELECT 1 FROM settings WHERE key='pw_hash'").fetchone())
 
