@@ -1,11 +1,19 @@
 """Bóveda local monousuario: contraseña con scrypt y campos/archivos cifrados con Fernet."""
 import sqlite3, os, json, secrets, hashlib, base64, hmac
+from contextvars import ContextVar
 from pathlib import Path
 from cryptography.fernet import Fernet, InvalidToken
 
 BASE = Path(os.environ.get('INCOME_DATA_DIR', Path(__file__).resolve().parent.parent / 'data'))
 BASE.mkdir(parents=True, exist_ok=True)
-DB = BASE / 'vault.db'
+DB = BASE / 'vault.db'  # Legacy local database; never used by Firebase users.
+CURRENT_UID = ContextVar('integral_uid', default=None)
+
+def user_db():
+    uid = CURRENT_UID.get()
+    if not uid: raise RuntimeError('Usuario no autenticado')
+    safe = ''.join(ch for ch in uid if ch.isalnum() or ch in '-_')[:128]
+    return BASE / ('user_' + hashlib.sha256(safe.encode()).hexdigest()[:32] + '.db')
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -15,18 +23,20 @@ CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, date TEXT NOT NULL, pa
 '''
 
 def db():
-    con = sqlite3.connect(DB)
+    con = sqlite3.connect(user_db())
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     return con
 
 def local_fernet():
-    """Key file local; use only with loopback binding. Not compatible with old password vaults."""
-    key_file=BASE/'local.key'
-    if not key_file.exists():
-        fd=os.open(key_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-        with os.fdopen(fd,'wb') as f: f.write(Fernet.generate_key())
-    return Fernet(key_file.read_bytes())
+    """Per-user encryption key derived from backend master key and verified Firebase UID."""
+    import hmac
+    uid=CURRENT_UID.get()
+    if not uid: raise RuntimeError('Usuario no autenticado')
+    master=os.environ.get('INTEGRAL_MASTER_KEY','')
+    if len(master)<32: raise RuntimeError('Configure INTEGRAL_MASTER_KEY (32+ caracteres)')
+    raw=hmac.new(master.encode(),uid.encode(),hashlib.sha256).digest()
+    return Fernet(base64.urlsafe_b64encode(raw))
 
 def configured():
     with db() as con: return bool(con.execute("SELECT 1 FROM settings WHERE key='pw_hash'").fetchone())

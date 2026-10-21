@@ -1,0 +1,11 @@
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import {getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+const config={apiKey:'AIzaSyCAHfT2jHrvkgLMlDyQcReQPboFZUy8SXI',authDomain:'integral-18a66.firebaseapp.com',projectId:'integral-18a66',storageBucket:'integral-18a66.firebasestorage.app',messagingSenderId:'816370412623',appId:'1:816370412623:web:9d6c14d66119a54bd4ce3a'};
+const auth=getAuth(initializeApp(config));
+const login=document.querySelector('#login'),main=document.querySelector('#workspace'),status=document.querySelector('#auth-status');
+let current=null;
+const ready=new Promise(resolve=>onAuthStateChanged(auth,user=>{current=user;login.classList.toggle('hidden',!!user);main.classList.toggle('hidden',!user);document.querySelector('#logout').style.display=user?'inline-block':'none';status.textContent=user?`Sesión: ${user.email}`:'Inicia sesión para ver tus datos';resolve(user);if(user){window.dispatchEvent(new Event('integral-login'))}}));
+window.integralAuth={ready,current:()=>current,token:async()=>{await ready;if(!current)throw new Error('Inicia sesión con Google');return current.getIdToken()},logout:()=>signOut(auth)};
+document.querySelector('#google-login').onclick=async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){status.textContent='Error al entrar: '+e.message}};
+document.querySelector('#logout').onclick=()=>signOut(auth);
+getRedirectResult(auth).catch(e=>status.textContent=e.message);

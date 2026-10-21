@@ -18,14 +18,10 @@ from .classifier import classify_batch
 ROOT=Path(__file__).resolve().parent.parent
 app=FastAPI(title='Integral | Ingresos variables',docs_url=None,redoc_url=None)
 app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
-# Uso LOCAL sin contraseña. Nunca se expone una bóveda compartida en una URL pública.
-# Si se quiere publicar, implementar primero autenticación Google/Firebase y aislamiento por usuario.
+from .auth import verify_request
+
 def session_key(request):
-    host=request.client.host if request.client else ''
-    requested_host=request.headers.get('host','').split(':')[0].strip('[]').lower()
-    if host not in ('127.0.0.1','::1','localhost','testclient') or requested_host not in ('127.0.0.1','::1','localhost','testserver'):
-        raise HTTPException(403,'Datos privados: Integral requiere acceso local. Para acceso público implemente Firebase Auth y aislamiento por usuario.')
-    return st.local_fernet()
+    return verify_request(request)
 
 def ensure_csrf(request):
     origin=request.headers.get('origin')
@@ -40,7 +36,7 @@ async def guard(request,call_next):
     response.headers['Cache-Control']='no-store'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['X-Frame-Options']='DENY'
-    response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; frame-src https://integral-18a66.firebaseapp.com https://accounts.google.com;"
     return response
 
 @app.get('/')
@@ -48,7 +44,7 @@ def index(): return FileResponse(ROOT/'static'/'index.html')
 @app.get('/api/state')
 def state(request:Request):
     session_key(request)
-    return {'configured':True,'authenticated':True,'mode':'local'}
+    return {'configured':True,'authenticated':True,'mode':'firebase','uid':request.state.uid}
 
 @app.get('/api/data')
 def data(request:Request):

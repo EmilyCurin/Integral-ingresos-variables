@@ -10,4 +10,6 @@ data/*
 *.db
 *.db-shm
 *.db-wal
+*firebase-admin*.json
+*service-account*.json
 .DS_Store
