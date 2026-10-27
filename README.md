@@ -179,3 +179,15 @@ git push origin main
 ```
 
 Si aparece `CONFLICT`, resuélvelo antes de hacer push; no uses `--force`. Comprueba que `.env`, credenciales de servicio, documentos bancarios y `data/` no estén en los archivos preparados para commit (`git status`).
+
+
+## Mejoras de interfaz: gastos, ingresos y plan
+
+1. En **Importar**, adjunta un documento y añade observaciones por escrito o con **Dictar observaciones**. El dictado utiliza Web Speech API del navegador; requiere permiso de micrófono, un navegador compatible y puede depender del servicio de voz del proveedor. No está garantizado sin Internet. Revisa siempre la transcripción.
+2. Revisa los colores de la tabla: gastos amarillos, préstamos rojos, ingresos recurrentes verdes, variables azules y extraordinarios morados; el color acompaña al texto, no lo sustituye. La categoría `pendiente` se reserva principalmente para abonos de origen dudoso, especialmente mayores a Q2,000.
+3. Confirma la importación. Consulta las pestañas **Gastos**, **Ingresos** y **Plan**. En **Plan**, responde hasta tres preguntas sobre las categorías de mayor gasto y añade gastos fijos si quieres afinar el presupuesto.
+4. Las categorías de gasto se estiman con reglas de palabras clave sobre la descripción bancaria y pueden equivocarse; el libro permite corregirlas. El plan aplica cálculos orientativos basados en transacciones confirmadas y respuestas; no calcula deudas externas ni garantiza disponibilidad real de ahorro.
+
+Para probar las tres reglas incorporadas: `python -m pytest tests/test_improvements.py -q`. Para comprobar errores de JavaScript, con Node instalado: `node --check static/app.js`.
+
+**Privacidad del dictado:** la Web Speech API puede procesar el audio con servicios del proveedor del navegador. Solicita consentimiento y evita dictar datos sensibles de terceros.

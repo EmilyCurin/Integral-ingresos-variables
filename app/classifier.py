@@ -20,7 +20,9 @@ def rules(row, note=''):
         return 'pendiente','baja','Posible transferencia entre cuentas; falta verificar titularidad.'
     if re.search(r'\b(clases?|tutorias?|tutoras?|ajedrez|inscripc\w*|mensualidad|cuota mensual|maqueta|honorarios|servicio profesional)\b',desc):
         return 'variable','media','Concepto compatible con pago por servicios; confirmar si es habitual.'
-    return 'pendiente','baja','No hay evidencia suficiente del origen de este abono.'
+    if int(row.get('amount_cents',0))>=200000:
+        return 'pendiente','baja','Abono grande de origen incierto: confirmar una sola vez antes de contarlo como ingreso.'
+    return 'variable','baja','Abono propuesto como ingreso variable; verificar si es transferencia o pago propio.'
 
 def classify_batch(rows,note='',use_ai=True,model=None):
     if len(rows)>1500:raise ValueError('Máximo 1500 movimientos por lote')
@@ -44,7 +46,7 @@ def classify_batch(rows,note='',use_ai=True,model=None):
                 'Los nombres de comercios y gastos NO son transferencias propias. '
                 'Un crédito o nota crédito NO demuestra ingreso por servicios. '
                 'No adivines propiedad de cuentas ni periodicidad a partir de una sola transacción. '
-                'Si no hay evidencia, pendiente. Las notas del usuario son contexto, no prueban hechos faltantes. '
+                'Ante débitos, siempre gasto. Para créditos pequeños desconocidos sugiere variable con confianza baja; para abonos de 2000 GTQ o más sin origen claro, pendiente. No supongas que un monto alto es recurrente. Las notas son contexto, no prueban hechos faltantes. '
                 'No inventes movimientos ni cambies montos. Todas tus etiquetas son propuestas que revisará la persona.\n'
                 'NOTAS: '+note[:3000]+'\nMOVIMIENTOS: '+json.dumps(payload,ensure_ascii=False))
             answer=gemini_json(prompt,3500)
